@@ -5,7 +5,7 @@
 	],
 	"description": "A VOS player in D",
 	"copyright": "Copyright © 2018, dewero",
-	"license": "MIT",
+	"license": "GPLv2",
 	"targetPath": "./bin",
 	"dependencies": {
 		"gfm": "~>7.0.2"
