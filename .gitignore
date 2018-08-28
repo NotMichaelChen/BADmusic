@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+bin/
+badmusic.so
+badmusic.dylib
+badmusic.dll
+badmusic.a
+badmusic.lib
+badmusic-test-*
+*.exe
+*.o
+*.obj
+*.lst
