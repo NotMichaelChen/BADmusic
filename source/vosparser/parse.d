@@ -5,7 +5,7 @@ module vosparser.parse;
 //TODO: remove all C dependencies
 import core.stdc.stdio, core.stdc.stdlib, core.stdc.string;
 
-import std.exception, std.digest.sha, std.conv, std.algorithm.mutation, std.algorithm.sorting, std.algorithm.comparison;
+import std.stdio, std.exception, std.digest.sha, std.conv, std.algorithm.mutation, std.algorithm.sorting, std.algorithm.comparison, std.format, std.bitmanip, std.system;
 
 enum NKEY = 7;
 enum SHA_DIGEST_LENGTH = 20;
@@ -98,7 +98,7 @@ private void hash_file(FILE* file, ubyte* hash)
 
     fseek(file, 0, SEEK_SET);
     size_t readLen = fread(source, ubyte.sizeof, bufsize, file);
-    enforce(readLen+1 == bufsize);
+    enforce(readLen == bufsize);
 
     source[readLen] = '\0';
 
@@ -142,7 +142,11 @@ private ushort midi_read_u16(FILE *file)
   int result;
 
   result = fread(&tmp, 2, 1, file); enforce(result == 1);
-  return tmp;
+  if(std.system.endian == Endian.littleEndian)
+    //Split as a Big Endian number, then interpret those big endian bytes as a little endian
+    return peek!(ushort, Endian.littleEndian)(nativeToBigEndian(tmp)[0..$]);
+  else
+    return tmp;
 }
 
 private uint midi_read_u32(FILE *file)
@@ -151,7 +155,11 @@ private uint midi_read_u32(FILE *file)
   int result;
 
   result = fread(&tmp, 4, 1, file); enforce(result == 1);
-  return tmp;
+  if(std.system.endian == Endian.littleEndian)
+    //Split as a Big Endian number, then interpret those big endian bytes as a little endian
+    return peek!(uint, Endian.littleEndian)(nativeToBigEndian(tmp)[0..$]);
+  else
+    return tmp;
 }
 
 private uint midi_read_vl(FILE *file)
@@ -180,7 +188,7 @@ private int tempo_change_compare(TempoChange* pa, TempoChange* pb)
 private void vosfile_read_midi(VosSong *song, FILE *file, uint mid_ofs, uint mid_len, double tempo_factor)
 {
   int result;
-  ubyte magic[4];
+  char magic[4];
   uint header_len, fmt, ppqn, i;
   TempoChange[] tempo_arr;
 //   GArray *tempo_arr;
@@ -188,8 +196,8 @@ private void vosfile_read_midi(VosSong *song, FILE *file, uint mid_ofs, uint mid
   
   result = fseek(file, mid_ofs, SEEK_SET); enforce(result == 0);
   result = fread(&magic[0], 4, 1, file); enforce(result == 1);
-  enforce(to!string(magic) == "MThd");
-  header_len = midi_read_u32(file); enforce(header_len == 6);
+  enforce(to!string(magic) == "MThd", to!string(magic));
+  header_len = midi_read_u32(file); enforce(header_len == 6, to!string(header_len));
   fmt = midi_read_u16(file); enforce(fmt == 1);
   song.ntrack = midi_read_u16(file); enforce(song.ntrack > 0);
   ppqn = midi_read_u16(file); enforce((ppqn & 0x8000) == 0); /* Actually a ppqn */
@@ -270,9 +278,9 @@ private void vosfile_read_midi(VosSong *song, FILE *file, uint mid_ofs, uint mid
     enforce(is_eot);
     enforce(cast(uint) ftell(file) == track_ofs + track_len);
     track.nevent = event_arr.length;
-    track.events = &event_arr[0]; //cast(MidiEvent *) g_array_free(event_arr, FALSE);
+    track.events = event_arr.length == 0 ? null : &event_arr[0]; //cast(MidiEvent *) g_array_free(event_arr, FALSE);
   }
-  tempo_arr.sort!((a, b) => (a.tt0 > b.tt0) ^ (a.tt0 < b.tt0));
+  tempo_arr.sort!((a, b) => (a.tt0 < b.tt0));
 //   g_array_sort(tempo_arr, tempo_change_compare);
   
   song.ntempo = tempo_arr.length;
@@ -299,7 +307,10 @@ private ushort vosfile_read_u16(FILE *file)
   int result;
 
   result = fread(&tmp, 2, 1, file); enforce(result == 1);
-  return tmp;
+  if(std.system.endian == Endian.bigEndian)
+    return peek!(ushort, Endian.bigEndian)(nativeToLittleEndian(tmp)[0..$]);
+  else
+    return tmp;
 }
 
 private uint vosfile_read_u32(FILE *file)
@@ -308,7 +319,10 @@ private uint vosfile_read_u32(FILE *file)
   int result;
 
   result = fread(&tmp, 4, 1, file); enforce(result == 1);
-  return tmp;
+  if(std.system.endian == Endian.bigEndian)
+    return peek!(uint, Endian.bigEndian)(nativeToLittleEndian(tmp)[0..$]);
+  else
+    return tmp;
 }
 
 private char *vosfile_read_string(FILE *file)
@@ -319,6 +333,7 @@ private char *vosfile_read_string(FILE *file)
 
   len = vosfile_read_u8(file); buf = cast(char*) malloc(char.sizeof * (len+1));
   result = fread(buf, 1, len, file); enforce(result == cast(int) len);
+  buf[len] = '\0';
   return buf;
 }
 
@@ -330,6 +345,7 @@ private char *vosfile_read_string2(FILE *file)
 
   len = vosfile_read_u16(file); buf = cast(char*) malloc(char.sizeof * (len+1));
   result = fread(buf, 1, len, file); enforce(result == cast(int) len);
+  buf[len] = '\0';
   return buf;
 }
 
@@ -340,6 +356,7 @@ private char *vosfile_read_string_fixed(FILE *file, uint len)
   
   buf = cast(char*) malloc(char.sizeof * (len+1));
   result = fread(buf, 1, len, file); enforce(result == cast(int) len);
+  buf[len] = '\0';
   return buf;
 }
 
@@ -578,8 +595,8 @@ private void vosfile_read_info_022(VosSong *song, FILE *file, uint inf_ofs, uint
     if (last_note_idx[un.key] != IDX_NONE) {
       UserNote *last_un = &user_notes_arr[last_note_idx[un.key]]; // g_array_index(user_notes_arr, UserNote, last_note_idx[un.key]);
       if (un.tt_start < last_un.tt_stop) { /* Notes on the same key should never overlap */
-	// g_warning("User note %u ignored because of overlapping notes.", i);
-	goto skip_user_note;
+	      // g_warning("User note %u ignored because of overlapping notes.", i);
+	      goto skip_user_note;
       }
       last_un.next_idx = cur_un_idx;
     } else song.first_un_idxs[un.key] = cur_un_idx; /* First note on this key */
@@ -587,9 +604,10 @@ private void vosfile_read_info_022(VosSong *song, FILE *file, uint inf_ofs, uint
     un.count = ++count[un.key];
     if (un.is_long) {
       un.prev_idx_long = last_note_idx_long[un.key]; un.next_idx_long = IDX_NONE;
-      if (last_note_idx_long[un.key] != IDX_NONE)
+      if (last_note_idx_long[un.key] != IDX_NONE){
 	// g_array_index(user_notes_arr, UserNote, last_note_idx_long[un.key]).next_idx_long = cur_un_idx;
-        user_notes_arr[last_note_idx[un.key]].next_idx_long = cur_un_idx;
+        user_notes_arr[last_note_idx_long[un.key]].next_idx_long = cur_un_idx;
+      }
       else song.first_un_idxs_long[un.key] = cur_un_idx;
       last_note_idx_long[un.key] = cur_un_idx;
       un.count_long = ++count_long[un.key];
@@ -642,9 +660,9 @@ private void vosfile_read_vos022(VosSong *song, FILE *file, uint file_size, doub
     fname_len = vosfile_read_u32(file);
     fname = vosfile_read_string_fixed(file, fname_len);
     len = vosfile_read_u32(file); data_ofs = ofs + 4 + fname_len + 4;
-    if (subfile_idx == 0) { enforce(strcmp(fname, "Vosctemp.trk") == 0); inf_ofs = data_ofs; inf_len = len; }
+    if (subfile_idx == 0) { enforce(strcmp(fname, "Vosctemp.trk") == 0, to!string(fname)); inf_ofs = data_ofs; inf_len = len; }
     else if (subfile_idx == 1) {
-      enforce(strcmp(fname, "VOSCTEMP.mid") == 0); mid_ofs = data_ofs, mid_len = len;
+      enforce(strcmp(fname, "VOSCTEMP.mid") == 0, to!string(fname)); mid_ofs = data_ofs, mid_len = len;
     } else throw new Exception(""); //TODO: put error message here // enforce_not_reached();
     free(fname); // g_free(fname);
     ofs = data_ofs + len; subfile_idx++;
@@ -655,7 +673,8 @@ private void vosfile_read_vos022(VosSong *song, FILE *file, uint file_size, doub
   vosfile_read_info_022(song, file, inf_ofs, inf_len);
 }
 
-VosSong* read_vos_file(const char *fname, double tempo_factor)
+//Default tempo_factor is 1.0
+public VosSong* read_vos_file(const char *fname, double tempo_factor)
 {
   VosSong *song;
   FILE *file;
@@ -671,7 +690,7 @@ VosSong* read_vos_file(const char *fname, double tempo_factor)
   magic = vosfile_read_u32(file);
   if (magic == 3) vosfile_read_vos1(song, file, file_size, tempo_factor);
   else if (magic == 2) vosfile_read_vos022(song, file, file_size, tempo_factor);
-  else throw new Exception(""); //TODO: add error message // enforce_not_reached();
+  else throw new Exception(to!string(magic)); //TODO: add error message // enforce_not_reached();
   
   fclose(file);
   return song;

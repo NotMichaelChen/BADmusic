@@ -1,12 +1,13 @@
 import std.stdio;
-import vosparser.parser, game.mainloop;
+import vosparser.parser, vosparser.parse, game.mainloop;
 
 void main(string[] args)
 {
 	if(args.length == 1)
 	{
-		File vosfile = File("./bin/1.vos", "r");
-		parseFile(vosfile);
+		// File vosfile = File("./bin/1.vos", "r");
+		// parseFile(vosfile);
+		read_vos_file("./bin/1.vos\0", 1.0);
 	}
 	else if(args.length == 2)
 	{
