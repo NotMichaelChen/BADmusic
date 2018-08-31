@@ -5,7 +5,8 @@ module vosparser.parse;
 //TODO: remove all C dependencies
 import core.stdc.stdio, core.stdc.stdlib, core.stdc.string;
 
-import std.stdio, std.exception, std.digest.sha, std.conv, std.algorithm.mutation, std.algorithm.sorting, std.algorithm.comparison, std.format, std.bitmanip, std.system;
+import std.stdio, std.exception, std.digest.sha, std.conv, std.algorithm.mutation, std.algorithm.sorting;
+import std.algorithm.comparison, std.format, std.bitmanip, std.system, std.math;
 
 enum NKEY = 7;
 enum SHA_DIGEST_LENGTH = 20;
@@ -79,9 +80,9 @@ struct VosSong
   UserNote *user_notes;
   bool has_min_max_rt;
   double min_rt, max_rt; /* For now, they only count the notes, not the tracks */
-  uint first_un_idxs[NKEY]; /* The first user note on each key */
-  uint first_un_idxs_long[NKEY]; /* The first long user note */
-  ubyte hash[SHA_DIGEST_LENGTH];
+  uint[NKEY] first_un_idxs; /* The first user note on each key */
+  uint[NKEY] first_un_idxs_long; /* The first long user note */
+  ubyte[SHA_DIGEST_LENGTH] hash;
 }
 
 //Hashes a file using SHA1.
@@ -188,7 +189,7 @@ private int tempo_change_compare(TempoChange* pa, TempoChange* pb)
 private void vosfile_read_midi(VosSong *song, FILE *file, uint mid_ofs, uint mid_len, double tempo_factor)
 {
   int result;
-  char magic[4];
+  char[4] magic;
   uint header_len, fmt, ppqn, i;
   TempoChange[] tempo_arr;
 //   GArray *tempo_arr;
@@ -246,7 +247,7 @@ private void vosfile_read_midi(VosSong *song, FILE *file, uint mid_ofs, uint mid
 	  enforce(meta_len == 0); is_eot = true; break;
 	case 0x51: /* Tempo */
 	  {
-	    ubyte buf[3];
+	    ubyte[3] buf;
 	    uint val;
 
 	    /* NOTE: If tempo changes exist in multiple tracks (e.g. 2317.vos), the array will be out of order.  Therefore,
@@ -366,7 +367,7 @@ private void vosfile_read_info(VosSong *song, FILE *file, uint inf_ofs, uint inf
   uint inf_end_ofs = inf_ofs + inf_len, cur_ofs, next_ofs, key;
   char* title, artist, comment, vos_author;
   uint song_type, ext_type, song_length, level;
-  char buf[4];
+  char[4] buf;
   // GArray *note_arrays_arr = g_array_new(FALSE, FALSE, sizeof(NoteArray));
   NoteArray[] note_arrays_arr;
   // GArray *user_notes_arr = g_array_new(FALSE, FALSE, sizeof(UserNote));
@@ -404,7 +405,7 @@ private void vosfile_read_info(VosSong *song, FILE *file, uint inf_ofs, uint inf
   while (1) {
     uint type, nnote, i;
     bool is_user_arr; /* Whether the current note array is the one to be played by the user. */
-    char dummy2[14];
+    char[14] dummy2;
     NoteArray cur_note_arr;
     TempoIt it;
 
@@ -491,8 +492,8 @@ private void vosfile_read_info_022(VosSong *song, FILE *file, uint inf_ofs, uint
   uint song_length, level, x;
   uint i, j, k, key;
   uint narr, nunote; /* NOTE: due to the deletion of buggy notes, song.num_user_note may be smaller than nunote */
-  char magic[6];
-  char unknown1[11];
+  char[6] magic;
+  char[11] unknown1;
   // GArray *user_notes_arr = g_array_new(FALSE, FALSE, sizeof(UserNote));
   UserNote[] user_notes_arr;
   uint[NKEY] last_note_idx, last_note_idx_long;
@@ -694,4 +695,38 @@ public VosSong* read_vos_file(const char *fname, double tempo_factor)
   
   fclose(file);
   return song;
+}
+
+unittest
+{
+  VosSong* song = read_vos_file("./bin/1.vos\0", 1.0);
+  writeln("ntempo: ", song.ntempo);
+  assert(song.ntempo == 3);
+  // for(int i = 0; i < song.ntempo; i++)
+  //   writeln(format("rt0:%s tt0:%s qn_time:%s", song.tempos[i].rt0, song.tempos[i].tt0, song.tempos[i].qn_time));
+  writeln("midi_unit_tt: ", song.midi_unit_tt);
+  assert(std.math.abs(song.midi_unit_tt - (1.0/120)) < double.epsilon);
+  writeln("ntrack: ", song.ntrack);
+  assert(song.ntrack == 13);
+
+  writeln("num_note_array: ", song.num_note_array);
+  assert(song.num_note_array == 10);
+
+  writeln("num_user_note: ", song.num_user_note);
+  assert(song.num_user_note == 225);
+
+  writeln("has_min_max_rt: ", song.has_min_max_rt);
+  assert(song.has_min_max_rt);
+
+  writeln(format("min_rt:%.20g max_rt:%.20g", song.min_rt, song.max_rt));
+  assert(std.math.feqrel(song.min_rt, 2.31124) >= 24);
+  assert(std.math.feqrel(song.max_rt, 178.457385) >= 28);
+
+  writeln(song.first_un_idxs);
+  assert(equal(song.first_un_idxs[0..$], [0, 2, 8, 9, 13, 37, 1]));
+  writeln(song.first_un_idxs_long);
+  assert(equal(song.first_un_idxs_long[0..$], [50, 6, 17, 102, 36, 118, 35]));
+
+  writeln(song.hash);
+  assert(equal(song.hash[0..$], [105, 0, 99, 0, 92, 0, 98, 0, 105, 0, 110, 0, 92, 0, 49, 0, 46, 0, 118, 0]));
 }

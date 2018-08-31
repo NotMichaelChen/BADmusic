@@ -7,7 +7,7 @@ void main(string[] args)
 	{
 		// File vosfile = File("./bin/1.vos", "r");
 		// parseFile(vosfile);
-		read_vos_file("./bin/1.vos\0", 1.0);
+		VosSong* song = read_vos_file("./bin/1.vos\0", 1.0);
 	}
 	else if(args.length == 2)
 	{
